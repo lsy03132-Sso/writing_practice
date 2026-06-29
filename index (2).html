@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>바른 글씨 쓰기 학습지 생성기</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- html2pdf.js (PDF 다운로드용) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+        
+        @font-face {
+            font-family: 'GyeonggiBatang';
+            src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_one@1.0/GyeonggiBatang.woff') format('woff');
+            font-weight: normal; font-style: normal;
+        }
+        @font-face {
+            font-family: 'KyoboHandwriting2019';
+            src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@1.0/KyoboHandwriting2019.woff') format('woff');
+            font-weight: normal; font-style: normal;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #f3f4f6;
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
+        .preview-container {
+            width: 100%; height: 100vh; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 1rem; box-sizing: border-box;
+        }
+
+        .a4-paper {
+            background: white; padding: 15mm 15mm; box-shadow: 0 10px 25px rgba(0,0,0,0.15); box-sizing: border-box; position: relative; flex-shrink: 0;
+        }
+
+        /* 세로형 / 가로형 규격 */
+        .a4-paper.portrait { width: 210mm; min-height: 297mm; }
+        .a4-paper.landscape { width: 297mm; min-height: 210mm; }
+        
+        /* PDF 다운로드 시 페이지 넘김 처리용 */
+        .page-break { page-break-before: always; }
+
+        @media (max-width: 800px) { 
+            .preview-container { justify-content: flex-start; padding: 1rem; } 
+        }
+
+        .grid-container {
+            display: grid; border-top: 2px solid #000; border-left: 2px solid #000; width: 100%; background-color: transparent;
+        }
+
+        .han-cell {
+            position: relative; aspect-ratio: 1 / 1; border-right: 2px solid #000; border-bottom: 2px solid #000; box-sizing: border-box;
+        }
+
+        .han-cell::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; border-top: 1px dashed var(--grid-color); transform: translateY(-50%); z-index: 1; }
+        .han-cell::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 1px dashed var(--grid-color); transform: translateX(-50%); z-index: 1; }
+
+        .han-char {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 10; line-height: 1;
+        }
+        
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #2563eb; cursor: pointer; margin-top: -6px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #cbd5e1; border-radius: 2px; }
+        
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="flex flex-col md:flex-row h-screen overflow-hidden">
+        
+        <!-- --- 좌측 제어 패널 --- -->
+        <div class="w-full md:w-[400px] bg-white shadow-xl z-10 flex flex-col h-full border-r border-gray-200">
+            <div class="p-5 flex-grow overflow-y-auto space-y-5">
+                <div>
+                    <h1 class="text-2xl font-bold text-center mb-1 text-gray-800">바른 글씨 쓰기 학습지</h1>
+                    <p class="text-center text-xs text-gray-500">- Made for Teachers -</p>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">학습지명 직접 입력</label>
+                        <input type="text" id="title-input" placeholder="예: 하루에 한장씩 바른 글씨" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                    </div>
+
+                    <!-- 용지 방향 선택 (새로운 기능) -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">용지 방향</label>
+                        <div class="flex space-x-4 bg-gray-50 p-2 rounded border">
+                            <label class="flex items-center text-sm text-gray-700 cursor-pointer font-medium">
+                                <input type="radio" name="orientation" value="portrait" checked class="mr-2 cursor-pointer" /> 세로형 (기본)
+                            </label>
+                            <label class="flex items-center text-sm text-gray-700 cursor-pointer font-medium">
+                                <input type="radio" name="orientation" value="landscape" class="mr-2 cursor-pointer" /> 가로형
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="flex space-x-2">
+                        <div class="w-1/2">
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">학년</label>
+                            <input type="text" id="grade-input" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                        </div>
+                        <div class="w-1/2">
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">반</label>
+                            <input type="text" id="class-input" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1" id="content-label">낱말 또는 문장 (자동 페이지 추가)</label>
+                        <textarea id="content-input" rows="4" placeholder="여기에 연습할 글귀를 직접 입력하세요. 글자가 많아지면 자동으로 다음 페이지가 생성됩니다."
+                            class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"></textarea>
+                        <div class="text-right text-xs text-gray-400 mt-1">현재 <span id="char-count">0</span>자 작성됨</div>
+                    </div>
+
+                    <div class="p-3 bg-gray-50 rounded border">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">기본 글꼴 및 선 설정</label>
+                        <div class="space-y-2">
+                            <select id="font-select" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                                <option value="GyeonggiBatang">경기천년바탕 (추천)</option>
+                                <option value="KyoboHandwriting2019">교보 손글씨 2019</option>
+                            </select>
+                            
+                            <div class="flex space-x-2">
+                                <div class="w-1/2">
+                                    <label class="text-xs text-gray-500 block mb-1">글씨 색상</label>
+                                    <div class="flex items-center border rounded bg-white">
+                                        <input type="color" id="text-color" value="#000000" class="w-8 h-8 border-0 p-0 cursor-pointer" />
+                                        <span class="px-2 text-xs uppercase flex-1" id="text-color-label">#000000</span>
+                                    </div>
+                                </div>
+                                <div class="w-1/2">
+                                    <label class="text-xs text-gray-500 block mb-1">점선 색상</label>
+                                    <div class="flex items-center border rounded bg-white">
+                                        <input type="color" id="grid-color" value="#0000FF" class="w-8 h-8 border-0 p-0 cursor-pointer" />
+                                        <span class="px-2 text-xs uppercase flex-1" id="grid-color-label">#0000FF</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <label class="flex items-center text-sm text-gray-700 mt-2 cursor-pointer">
+                                <input type="checkbox" id="tracing-mode" class="mr-2 rounded" />
+                                따라쓰기 모드 (연하게)
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="border-t pt-4">
+                        <h3 class="font-bold text-gray-800 mb-2">한글 색상 구분</h3>
+                        
+                        <label class="flex items-center text-sm font-medium text-blue-600 mb-2 cursor-pointer">
+                            <input type="checkbox" id="use-color-sep" class="mr-2 w-4 h-4 text-blue-600" />
+                            자음, 모음, 받침을 색상으로 구분
+                        </label>
+
+                        <div id="color-sep-panel" class="ml-6 space-y-4 hidden">
+                            <label class="flex items-center text-sm text-gray-600 cursor-pointer">
+                                <input type="checkbox" id="trace-mode-sub" class="mr-2 rounded" />
+                                따라쓰기 모드
+                            </label>
+
+                            <div class="flex space-x-2">
+                                <div class="w-1/3">
+                                    <label class="text-xs text-gray-500 block mb-1">자음 색상</label>
+                                    <div class="flex items-center border rounded bg-white overflow-hidden">
+                                        <input type="color" id="color-cho" value="#EF4444" class="w-full h-8 border-0 p-0 cursor-pointer" />
+                                    </div>
+                                </div>
+                                <div class="w-1/3">
+                                    <label class="text-xs text-gray-500 block mb-1">모음 색상</label>
+                                    <div class="flex items-center border rounded bg-white overflow-hidden">
+                                        <input type="color" id="color-jung" value="#F97316" class="w-full h-8 border-0 p-0 cursor-pointer" />
+                                    </div>
+                                </div>
+                                <div class="w-1/3">
+                                    <label class="text-xs text-gray-500 block mb-1">받침 색상</label>
+                                    <div class="flex items-center border rounded bg-white overflow-hidden">
+                                        <input type="color" id="color-jong" value="#3B82F6" class="w-full h-8 border-0 p-0 cursor-pointer" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 border-t pt-3">
+                                <label class="flex items-center text-sm font-medium text-blue-600 mb-3 cursor-pointer">
+                                    <input type="checkbox" id="use-pos-adjust" class="mr-2 w-4 h-4 text-blue-600" />
+                                    위치 미세 조절
+                                </label>
+
+                                <div id="pos-adjust-panel" class="space-y-3 hidden">
+                                    <div class="bg-red-50 p-3 rounded border border-red-100">
+                                        <div class="text-red-700 font-bold text-xs mb-2">초성 (자음) 위치 조절</div>
+                                        <div class="flex space-x-4">
+                                            <div class="w-1/2">
+                                                <label class="text-[10px] text-gray-500">가로 (<span id="val-cho-x">0</span>px)</label>
+                                                <input type="range" id="offset-cho-x" min="-30" max="30" value="0" />
+                                            </div>
+                                            <div class="w-1/2">
+                                                <label class="text-[10px] text-gray-500">세로 (<span id="val-cho-y">0</span>px)</label>
+                                                <input type="range" id="offset-cho-y" min="-30" max="30" value="0" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="bg-orange-50 p-3 rounded border border-orange-100">
+                                        <div class="text-orange-700 font-bold text-xs mb-2">중성 (모음) 위치 조절</div>
+                                        <div class="flex space-x-4">
+                                            <div class="w-1/2">
+                                                <label class="text-[10px] text-gray-500">가로 (<span id="val-jung-x">0</span>px)</label>
+                                                <input type="range" id="offset-jung-x" min="-30" max="30" value="0" />
+                                            </div>
+                                            <div class="w-1/2">
+                                                <label class="text-[10px] text-gray-500">세로 (<span id="val-jung-y">0</span>px)</label>
+                                                <input type="range" id="offset-jung-y" min="-30" max="30" value="0" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="bg-blue-50 p-3 rounded border border-blue-100">
+                                        <div class="text-blue-700 font-bold text-xs mb-2">종성 (받침) 위치 조절</div>
+                                        <div class="flex space-x-4">
+                                            <div class="w-1/2">
+                                                <label class="text-[10px] text-gray-500">가로 (<span id="val-jong-x">0</span>px)</label>
+                                                <input type="range" id="offset-jong-x" min="-30" max="30" value="0" />
+                                            </div>
+                                            <div class="w-1/2">
+                                                <label class="text-[10px] text-gray-500">세로 (<span id="val-jong-y">0</span>px)</label>
+                                                <input type="range" id="offset-jong-y" min="-30" max="30" value="0" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button id="reset-pos-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white text-xs py-2 rounded transition">
+                                        위치 초기화
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 하단 고정 버튼 -->
+            <div class="p-4 bg-gray-50 border-t flex justify-center">
+                <button id="pdf-btn" class="bg-[#e74c3c] hover:bg-[#c0392b] text-white font-bold py-3 px-8 rounded shadow transition duration-200 w-full text-lg">
+                    PDF 저장
+                </button>
+            </div>
+        </div>
+
+        <!-- --- 우측 미리보기 패널 --- -->
+        <div class="flex-1 preview-container relative bg-gray-200">
+            <div id="pdf-document" class="flex flex-col items-center gap-8 w-full pb-10">
+                <!-- Javascript로 여러 페이지(a4-paper)가 동적 생성됨 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            title: '', grade: '', classNum: '', content: '',
+            orientation: 'portrait', // 'portrait' | 'landscape'
+            fontFamily: 'GyeonggiBatang', textColor: '#000000', gridColor: '#0000FF', tracingMode: false,
+            useColorSep: false, traceModeSub: false,
+            colorCho: '#EF4444', colorJung: '#F97316', colorJong: '#3B82F6',
+            usePosAdjust: false,
+            offsetCho: { x: 0, y: 0 },
+            offsetJung: { x: 0, y: 0 },
+            offsetJong: { x: 0, y: 0 }
+        };
+
+        // 가로/세로 모드에 따른 칸 수 설정
+        const PAPER_CONFIG = {
+            portrait: { cols: 10, rows: 13, cells: 130 },
+            landscape: { cols: 14, rows: 9, cells: 126 }
+        };
+
+        const charCount = document.getElementById('char-count');
+
+        // 자모 분리 로직
+        function getJamo(char) {
+            if (!char) return null;
+            const code = char.charCodeAt(0) - 0xac00;
+            if (code < 0 || code > 11171) return null;
+
+            const choIndex = Math.floor(code / 588);
+            const jungIndex = Math.floor((code - (choIndex * 588)) / 28);
+            const jongIndex = code % 28;
+
+            const choChars = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+            const jungChars = ['ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ', 'ㅙ', 'ㅚ', 'ㅛ', 'ㅜ', 'ㅝ', 'ㅞ', 'ㅟ', 'ㅠ', 'ㅡ', 'ㅢ', 'ㅣ'];
+            const jongChars = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+
+            return {
+                cho: choChars[choIndex],
+                jung: jungChars[jungIndex],
+                jong: jongChars[jongIndex] !== '' ? jongChars[jongIndex] : null
+            };
+        }
+
+        // 스마트 오프셋 (정중앙 기반 비율 정렬 알고리즘)
+        function getSmartBaseOffset(jamo) {
+            const hasJong = !!jamo.jong;
+            const verticalJungs = ['ㅏ', 'ㅑ', 'ㅓ', 'ㅕ', 'ㅣ', 'ㅐ', 'ㅒ', 'ㅔ', 'ㅖ'];
+            const horizontalJungs = ['ㅗ', 'ㅛ', 'ㅜ', 'ㅠ', 'ㅡ'];
+
+            const isVertical = verticalJungs.includes(jamo.jung);
+            const isHorizontal = horizontalJungs.includes(jamo.jung);
+
+            if (hasJong) {
+                if (isHorizontal) return { cho: { x: 0, y: -16 }, jung: { x: 0, y: -2 }, jong: { x: 0, y: 14 } };
+                else if (isVertical) return { cho: { x: -10, y: -12 }, jung: { x: 10, y: -12 }, jong: { x: 0, y: 14 } };
+                else return { cho: { x: -8, y: -14 }, jung: { x: 8, y: -4 }, jong: { x: 0, y: 14 } };
+            } else {
+                if (isHorizontal) return { cho: { x: 0, y: -10 }, jung: { x: 0, y: 10 }, jong: { x: 0, y: 0 } };
+                else if (isVertical) return { cho: { x: -12, y: 0 }, jung: { x: 12, y: 0 }, jong: { x: 0, y: 0 } };
+                else return { cho: { x: -10, y: -8 }, jung: { x: 10, y: 6 }, jong: { x: 0, y: 0 } };
+            }
+        }
+
+        // 화면 크기에 맞게 미리보기 A4 용지 비율 자동 조절
+        function adjustPaperScale() {
+            const container = document.querySelector('.preview-container');
+            const wrapper = document.getElementById('pdf-document');
+            if (!container || !wrapper) return;
+
+            wrapper.style.transform = 'none';
+            
+            const firstPaper = wrapper.querySelector('.a4-paper');
+            if(!firstPaper) return;
+
+            // 브라우저 렌더링 강제 업데이트
+            void wrapper.offsetWidth;
+
+            const padding = 32; 
+            const availableWidth = container.clientWidth - padding;
+            
+            const paperWidth = firstPaper.offsetWidth;
+
+            // 여러 장이 세로로 나열되므로, 세로 크기에 구애받지 않고 가로 폭(너비)에 맞춰 스케일링
+            const scaleX = availableWidth / paperWidth;
+            let scale = Math.min(scaleX, 1.2); // 과도하게 커지는 것 방지
+
+            wrapper.style.transform = `scale(${scale})`;
+            wrapper.style.transformOrigin = 'top center';
+            
+            const actualHeight = wrapper.offsetHeight;
+            wrapper.style.marginBottom = `-${actualHeight * (1 - scale)}px`;
+        }
+
+        // 창 크기가 바뀔 때마다 스케일 다시 계산
+        window.addEventListener('resize', adjustPaperScale);
+
+        function renderPreview() {
+            // 가로/세로 방향 설정 가져오기
+            const config = PAPER_CONFIG[state.orientation];
+            const totalCells = config.cells;
+
+            // 내용 페이징 분리 로직 (글자가 많아지면 여러 페이지 배열로 나눔)
+            let pagesData = [];
+            let currentCells = Array(totalCells).fill('');
+            let cursor = 0;
+            
+            for (let i = 0; i < state.content.length; i++) {
+                const char = state.content[i];
+                
+                // 1. 칸을 모두 채웠으면 다음 페이지로
+                if (cursor >= totalCells) {
+                    pagesData.push(currentCells);
+                    currentCells = Array(totalCells).fill('');
+                    cursor = 0;
+                }
+                
+                if (char === '\n') {
+                    const nextRowStart = Math.ceil((cursor + 0.1) / config.cols) * config.cols;
+                    // 2. 줄바꿈 시 다음 줄이 페이지를 넘어가면 다음 페이지로
+                    if (nextRowStart >= totalCells) {
+                        pagesData.push(currentCells);
+                        currentCells = Array(totalCells).fill('');
+                        cursor = 0;
+                    } else {
+                        cursor = nextRowStart;
+                    }
+                } else if (char === ' ') {
+                    cursor++;
+                } else {
+                    currentCells[cursor] = char;
+                    cursor++;
+                }
+            }
+            pagesData.push(currentCells); // 마지막 남은 내용 추가
+            if (pagesData.length === 0) pagesData.push(Array(totalCells).fill('')); // 최소 1페이지 보장
+
+            const pdfDocument = document.getElementById('pdf-document');
+            pdfDocument.innerHTML = ''; // 래퍼 초기화
+            
+            // 각 페이지별로 a4-paper DOM 생성
+            pagesData.forEach((cells, pageIndex) => {
+                const paper = document.createElement('div');
+                paper.className = `a4-paper ${state.orientation} flex flex-col relative bg-white shadow-xl`;
+                if (pageIndex > 0) paper.classList.add('page-break'); // PDF 다운로드 시 페이지 넘김 처리
+
+                // 헤더 생성
+                const header = document.createElement('div');
+                header.className = 'flex justify-between items-end mb-6 pb-2 border-b-2 border-black';
+                header.style.minHeight = '60px';
+                header.innerHTML = `
+                    <div class="w-1/4"></div>
+                    <div class="w-2/4 text-center">
+                        <h2 class="text-4xl font-bold text-black" style="font-family: 'Noto Sans KR', sans-serif;">
+                            ${state.title || '　'}
+                        </h2>
+                    </div>
+                    <div class="w-1/4 text-right text-[13px] leading-tight font-medium" style="font-family: 'Noto Sans KR', sans-serif;">
+                        <div class="mb-2">
+                            <span>${state.grade ? state.grade + '학년' : ''}</span> 
+                            <span>${state.classNum ? state.classNum + '반' : ''}</span> 
+                            <span class="inline-block w-10 border-b border-black text-center"></span>번
+                        </div>
+                        <div>
+                            이름: <span class="inline-block w-24 border-b border-black"></span>
+                        </div>
+                    </div>
+                `;
+                paper.appendChild(header);
+
+                // 그리드 컨테이너 생성
+                const gridContainer = document.createElement('div');
+                gridContainer.className = 'grid-container flex-grow';
+                gridContainer.style.gridTemplateColumns = `repeat(${config.cols}, 1fr)`;
+                gridContainer.style.setProperty('--grid-color', state.gridColor);
+
+                // 셀 렌더링
+                cells.forEach(char => {
+                    const cell = document.createElement('div');
+                    cell.className = 'han-cell';
+
+                    if (!char) {
+                        gridContainer.appendChild(cell);
+                        return;
+                    }
+
+                    if (state.useColorSep) {
+                        const jamo = getJamo(char);
+                        if (jamo) {
+                            const basePos = getSmartBaseOffset(jamo);
+                            const finalChoX = basePos.cho.x + state.offsetCho.x;
+                            const finalChoY = basePos.cho.y + state.offsetCho.y;
+                            const finalJungX = basePos.jung.x + state.offsetJung.x;
+                            const finalJungY = basePos.jung.y + state.offsetJung.y;
+                            const finalJongX = basePos.jong ? basePos.jong.x + state.offsetJong.x : 0;
+                            const finalJongY = basePos.jong ? basePos.jong.y + state.offsetJong.y : 0;
+
+                            const charDiv = document.createElement('div');
+                            charDiv.className = 'han-char relative w-full h-full font-bold';
+                            charDiv.style.fontFamily = state.fontFamily;
+                            charDiv.style.fontSize = '36px';
+
+                            const opacity = state.traceModeSub ? 0.3 : 1;
+
+                            const choSpan = document.createElement('span');
+                            choSpan.className = 'absolute inset-0 flex items-center justify-center';
+                            choSpan.style.color = state.colorCho;
+                            choSpan.style.opacity = opacity;
+                            choSpan.style.transform = `translate(${finalChoX}px, ${finalChoY}px)`;
+                            choSpan.innerText = jamo.cho;
+                            charDiv.appendChild(choSpan);
+
+                            const jungSpan = document.createElement('span');
+                            jungSpan.className = 'absolute inset-0 flex items-center justify-center';
+                            jungSpan.style.color = state.colorJung;
+                            jungSpan.style.opacity = opacity;
+                            jungSpan.style.transform = `translate(${finalJungX}px, ${finalJungY}px)`;
+                            jungSpan.innerText = jamo.jung;
+                            charDiv.appendChild(jungSpan);
+
+                            if (jamo.jong) {
+                                const jongSpan = document.createElement('span');
+                                jongSpan.className = 'absolute inset-0 flex items-center justify-center';
+                                jongSpan.style.color = state.colorJong;
+                                jongSpan.style.opacity = opacity;
+                                jongSpan.style.transform = `translate(${finalJongX}px, ${finalJongY}px)`;
+                                jongSpan.innerText = jamo.jong;
+                                charDiv.appendChild(jongSpan);
+                            }
+
+                            cell.appendChild(charDiv);
+                            gridContainer.appendChild(cell);
+                            return;
+                        }
+                    }
+
+                    // 일반 모드
+                    const span = document.createElement('span');
+                    span.className = 'han-char absolute inset-0 flex items-center justify-center';
+                    span.style.fontFamily = state.fontFamily;
+                    span.style.fontSize = '42px';
+                    span.style.color = state.textColor;
+                    span.style.opacity = state.tracingMode && !state.useColorSep ? 0.25 : 1;
+                    span.innerText = char;
+                    cell.appendChild(span);
+                    
+                    gridContainer.appendChild(cell);
+                });
+
+                paper.appendChild(gridContainer);
+                pdfDocument.appendChild(paper);
+            });
+
+            // 렌더링 완료 후 크기 조절 (가로/세로 전환 시 즉각 반영)
+            setTimeout(adjustPaperScale, 50);
+        }
+
+        function bindInput(id, key, type = 'text') {
+            document.getElementById(id).addEventListener('input', (e) => {
+                if (type === 'checkbox') state[key] = e.target.checked;
+                else state[key] = e.target.value;
+                
+                if(id === 'content-input') charCount.innerText = e.target.value.length;
+                if(id === 'text-color') document.getElementById('text-color-label').innerText = e.target.value;
+                if(id === 'grid-color') document.getElementById('grid-color-label').innerText = e.target.value;
+                
+                renderPreview();
+            });
+        }
+
+        function bindOffsetSlider(id, targetObj, axis, displayId) {
+            document.getElementById(id).addEventListener('input', (e) => {
+                const val = parseInt(e.target.value);
+                state[targetObj][axis] = val;
+                document.getElementById(displayId).innerText = val;
+                renderPreview();
+            });
+        }
+
+        window.onload = () => {
+            bindInput('title-input', 'title');
+            bindInput('grade-input', 'grade');
+            bindInput('class-input', 'classNum');
+            bindInput('content-input', 'content');
+            
+            // 용지 방향 라디오 버튼 이벤트
+            document.querySelectorAll('input[name="orientation"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    state.orientation = e.target.value;
+                    renderPreview();
+                });
+            });
+
+            bindInput('font-select', 'fontFamily');
+            bindInput('text-color', 'textColor');
+            bindInput('grid-color', 'gridColor');
+            bindInput('tracing-mode', 'tracingMode', 'checkbox');
+            bindInput('trace-mode-sub', 'traceModeSub', 'checkbox');
+            bindInput('color-cho', 'colorCho');
+            bindInput('color-jung', 'colorJung');
+            bindInput('color-jong', 'colorJong');
+
+            document.getElementById('use-color-sep').addEventListener('change', (e) => {
+                state.useColorSep = e.target.checked;
+                document.getElementById('color-sep-panel').classList.toggle('hidden', !state.useColorSep);
+                document.getElementById('tracing-mode').disabled = state.useColorSep;
+                renderPreview();
+            });
+
+            document.getElementById('use-pos-adjust').addEventListener('change', (e) => {
+                state.usePosAdjust = e.target.checked;
+                document.getElementById('pos-adjust-panel').classList.toggle('hidden', !state.usePosAdjust);
+            });
+
+            bindOffsetSlider('offset-cho-x', 'offsetCho', 'x', 'val-cho-x');
+            bindOffsetSlider('offset-cho-y', 'offsetCho', 'y', 'val-cho-y');
+            bindOffsetSlider('offset-jung-x', 'offsetJung', 'x', 'val-jung-x');
+            bindOffsetSlider('offset-jung-y', 'offsetJung', 'y', 'val-jung-y');
+            bindOffsetSlider('offset-jong-x', 'offsetJong', 'x', 'val-jong-x');
+            bindOffsetSlider('offset-jong-y', 'offsetJong', 'y', 'val-jong-y');
+
+            document.getElementById('reset-pos-btn').addEventListener('click', () => {
+                state.offsetCho = {x: 0, y: 0};
+                state.offsetJung = {x: 0, y: 0};
+                state.offsetJong = {x: 0, y: 0};
+                ['cho','jung','jong'].forEach(j => {
+                    ['x','y'].forEach(axis => {
+                        document.getElementById(`offset-${j}-${axis}`).value = 0;
+                        document.getElementById(`val-${j}-${axis}`).innerText = '0';
+                    });
+                });
+                renderPreview();
+            });
+
+            // PDF 다운로드 기능
+            document.getElementById('pdf-btn').addEventListener('click', () => {
+                const element = document.getElementById('pdf-document');
+                const btn = document.getElementById('pdf-btn');
+                const originalText = btn.innerText;
+
+                btn.innerText = "PDF 생성 중...";
+                btn.disabled = true;
+
+                const container = document.querySelector('.preview-container');
+                const origContainerStyle = container.style.cssText;
+                const origElementStyle = element.style.cssText;
+
+                container.style.overflow = 'visible';
+                container.style.height = 'auto';
+                element.style.transform = 'none';
+                element.style.margin = '0 auto';
+
+                const opt = {
+                    margin:       0,
+                    filename:     `${state.title || '학습지'}.pdf`,
+                    image:        { type: 'jpeg', quality: 1 },
+                    html2canvas:  { scale: 2, useCORS: true, logging: false },
+                    jsPDF:        { unit: 'mm', format: 'a4', orientation: state.orientation },
+                    pagebreak:    { mode: 'css', before: '.page-break' } // 다중 페이지 PDF 넘김 처리
+                };
+
+                window.html2pdf().set(opt).from(element).save().then(() => {
+                    container.style.cssText = origContainerStyle;
+                    element.style.cssText = origElementStyle;
+                    btn.innerText = originalText;
+                    btn.disabled = false;
+                    
+                    // PDF 생성 완료 후 스케일 원상복구
+                    adjustPaperScale(); 
+                });
+            });
+
+            renderPreview();
+        };
+    </script>
+</body>
+</html>
