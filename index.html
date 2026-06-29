@@ -73,6 +73,8 @@
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #cbd5e1; border-radius: 2px; }
         
         .hidden { display: none; }
+        
+        .page-break-always { page-break-before: always; }
     </style>
 </head>
 <body>
@@ -117,10 +119,13 @@
                     </div>
 
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-1" id="content-label">낱말 또는 문장 (최대 130자)</label>
-                        <textarea id="content-input" rows="3" maxlength="130" placeholder="여기에 연습할 글귀를 직접 입력하세요."
+                        <label class="block text-sm font-semibold text-gray-700 mb-1" id="content-label">낱말 또는 문장 입력</label>
+                        <textarea id="content-input" rows="4" placeholder="여기에 연습할 글귀를 직접 입력하세요."
                             class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"></textarea>
-                        <div class="text-right text-xs text-gray-400 mt-1"><span id="char-count">0</span>/<span id="max-count">130</span>자</div>
+                        <div class="flex justify-between items-center mt-1">
+                            <span class="text-xs text-blue-600 font-semibold" id="page-info">(총 1쪽)</span>
+                            <div class="text-right text-xs text-gray-500">현재 <span id="char-count" class="font-bold">0</span>자 입력됨</div>
+                        </div>
                     </div>
 
                     <div class="p-3 bg-gray-50 rounded border">
@@ -259,28 +264,8 @@
 
         <!-- --- 우측 미리보기 패널 --- -->
         <div class="flex-1 preview-container relative bg-gray-200">
-            <div id="pdf-document" class="a4-paper portrait flex flex-col">
-                
-                <!-- 헤더 영역 -->
-                <div class="flex justify-between items-end mb-6 pb-2 border-b-2 border-black" style="min-height: 60px;">
-                    <div class="w-1/4"></div>
-                    <div class="w-2/4 text-center">
-                        <h2 id="preview-title" class="text-4xl font-bold text-black" style="font-family: 'Noto Sans KR', sans-serif;">　</h2>
-                    </div>
-                    <div class="w-1/4 text-right text-[13px] leading-tight font-medium" style="font-family: 'Noto Sans KR', sans-serif;">
-                        <div class="mb-2">
-                            <span id="preview-grade"></span> <span id="preview-class"></span> <span class="inline-block w-10 border-b border-black text-center"></span>번
-                        </div>
-                        <div>
-                            이름: <span class="inline-block w-24 border-b border-black"></span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 원고지 격자 영역 -->
-                <div id="grid-container" class="grid-container flex-grow" style="--grid-color: #0000FF;">
-                    <!-- Javascript로 동적 생성됨 -->
-                </div>
+            <div id="pdf-wrapper" class="flex flex-col gap-6 items-center w-full pb-8">
+                <!-- Javascript로 동적 페이지가 여러장 생성됨 -->
             </div>
         </div>
     </div>
@@ -351,151 +336,208 @@
             }
         }
 
+        // 동적으로 단일 페이지(DOM) 생성
+        function createPageElement(pageIndex, totalPages) {
+            const paper = document.createElement('div');
+            paper.className = `a4-paper ${state.orientation} flex flex-col`;
+            
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-end mb-6 pb-2 border-b-2 border-black';
+            header.style.minHeight = '60px';
+
+            const leftDiv = document.createElement('div');
+            leftDiv.className = 'w-1/4 text-sm font-bold text-gray-400 pb-1';
+            leftDiv.innerText = `${pageIndex + 1} / ${totalPages}`;
+
+            const centerDiv = document.createElement('div');
+            centerDiv.className = 'w-2/4 text-center';
+            const titleH2 = document.createElement('h2');
+            titleH2.className = 'text-4xl font-bold text-black';
+            titleH2.style.fontFamily = "'Noto Sans KR', sans-serif";
+            titleH2.innerText = state.title || '　';
+            centerDiv.appendChild(titleH2);
+
+            const rightDiv = document.createElement('div');
+            rightDiv.className = 'w-1/4 text-right text-[13px] leading-tight font-medium';
+            rightDiv.style.fontFamily = "'Noto Sans KR', sans-serif";
+            rightDiv.innerHTML = `
+                <div class="mb-2">
+                    <span>${state.grade ? state.grade + '학년' : ''}</span> 
+                    <span>${state.classNum ? state.classNum + '반' : ''}</span> 
+                    <span class="inline-block w-10 border-b border-black text-center"></span>번
+                </div>
+                <div>이름: <span class="inline-block w-24 border-b border-black"></span></div>
+            `;
+
+            header.appendChild(leftDiv);
+            header.appendChild(centerDiv);
+            header.appendChild(rightDiv);
+
+            const grid = document.createElement('div');
+            grid.className = 'grid-container flex-grow';
+            grid.style.setProperty('--grid-color', state.gridColor);
+            const config = PAPER_CONFIG[state.orientation];
+            grid.style.gridTemplateColumns = `repeat(${config.cols}, 1fr)`;
+
+            paper.appendChild(header);
+            paper.appendChild(grid);
+
+            return { paper, grid };
+        }
+
         // 화면 크기에 맞게 미리보기 A4 용지 비율 자동 조절
         function adjustPaperScale() {
             const container = document.querySelector('.preview-container');
-            const paper = document.getElementById('pdf-document');
-            if (!container || !paper) return;
+            const wrapper = document.getElementById('pdf-wrapper');
+            if (!container || !wrapper) return;
+
+            const firstPaper = wrapper.querySelector('.a4-paper');
+            if (!firstPaper) return;
 
             // 크기 측정을 위해 스케일 임시 해제
-            paper.style.transform = 'none';
-            paper.style.marginBottom = '0';
+            wrapper.style.transform = 'none';
+            wrapper.style.marginBottom = '0';
 
-            // 브라우저 렌더링 강제 업데이트 (크기 변경을 즉시 인식하게 만듦)
-            void paper.offsetWidth;
+            void wrapper.offsetWidth;
 
-            // 화면 꽉 차게 확대하기 위해 여백 최소화
             const padding = 32; 
             const availableWidth = container.clientWidth - padding;
             const availableHeight = container.clientHeight - padding;
             
-            const paperWidth = paper.offsetWidth;
-            const paperHeight = paper.offsetHeight;
+            const paperWidth = firstPaper.offsetWidth;
+            const paperHeight = firstPaper.offsetHeight;
 
-            // 가로, 세로 중 더 빡빡한 쪽에 맞춰 비율 계산
             const scaleX = availableWidth / paperWidth;
             const scaleY = availableHeight / paperHeight;
             let scale = Math.min(scaleX, scaleY);
+            
+            if (scale > 1.2) scale = 1.2; // 과도한 확대 방지
 
-            // (기존의 100% 확대 제한 삭제 -> 큰 모니터일수록 화면에 꽉 차게 확대됨)
-
-            // 스케일 및 여백 적용
-            paper.style.transform = `scale(${scale})`;
-            paper.style.transformOrigin = 'top center';
-            // 축소/확대된 만큼 아래쪽 빈 여백 보정
-            paper.style.marginBottom = `-${paperHeight * (1 - scale)}px`;
+            wrapper.style.transform = `scale(${scale})`;
+            wrapper.style.transformOrigin = 'top center';
+            
+            const scaledHeightDiff = wrapper.offsetHeight * (1 - scale);
+            wrapper.style.marginBottom = `-${scaledHeightDiff}px`;
         }
 
-        // 창 크기가 바뀔 때마다 스케일 다시 계산
         window.addEventListener('resize', adjustPaperScale);
 
         function renderPreview() {
-            previewTitle.innerText = state.title || '　';
-            previewGrade.innerText = state.grade ? `${state.grade}학년` : '';
-            previewClass.innerText = state.classNum ? `${state.classNum}반` : '';
+            const wrapper = document.getElementById('pdf-wrapper');
+            wrapper.innerHTML = ''; 
 
-            // 가로/세로 방향 설정 가져오기
             const config = PAPER_CONFIG[state.orientation];
             const totalCells = config.cells;
 
-            // 용지 방향 클래스 토글
-            const paper = document.getElementById('pdf-document');
-            paper.className = `a4-paper ${state.orientation} flex flex-col`;
-
-            // 그리드 생성
-            gridContainer.style.gridTemplateColumns = `repeat(${config.cols}, 1fr)`;
-            gridContainer.style.setProperty('--grid-color', state.gridColor);
-            gridContainer.innerHTML = ''; 
-
-            let cells = Array(totalCells).fill('');
+            const pagesData = [];
+            let currentPageCells = Array(totalCells).fill('');
             let cursor = 0;
-            
+
             for (let i = 0; i < state.content.length; i++) {
-                if (cursor >= totalCells) break;
+                if (cursor >= totalCells) {
+                    pagesData.push(currentPageCells);
+                    currentPageCells = Array(totalCells).fill('');
+                    cursor = 0;
+                }
+
                 const char = state.content[i];
                 if (char === '\n') {
                     cursor = Math.ceil((cursor + 0.1) / config.cols) * config.cols;
+                    if (cursor >= totalCells) {
+                        pagesData.push(currentPageCells);
+                        currentPageCells = Array(totalCells).fill('');
+                        cursor = 0;
+                    }
                 } else if (char === ' ') {
                     cursor++;
                 } else {
-                    cells[cursor] = char;
+                    currentPageCells[cursor] = char;
                     cursor++;
                 }
             }
+            if (cursor > 0 || pagesData.length === 0) {
+                pagesData.push(currentPageCells);
+            }
 
-            cells.forEach(char => {
-                const cell = document.createElement('div');
-                cell.className = 'han-cell';
+            document.getElementById('page-info').innerText = `(총 ${pagesData.length}쪽)`;
 
-                if (!char) {
-                    gridContainer.appendChild(cell);
-                    return;
-                }
+            pagesData.forEach((cells, pageIndex) => {
+                const { paper, grid } = createPageElement(pageIndex, pagesData.length);
+                
+                cells.forEach(char => {
+                    const cell = document.createElement('div');
+                    cell.className = 'han-cell';
 
-                if (state.useColorSep) {
-                    const jamo = getJamo(char);
-                    if (jamo) {
-                        const basePos = getSmartBaseOffset(jamo);
-                        const finalChoX = basePos.cho.x + state.offsetCho.x;
-                        const finalChoY = basePos.cho.y + state.offsetCho.y;
-                        const finalJungX = basePos.jung.x + state.offsetJung.x;
-                        const finalJungY = basePos.jung.y + state.offsetJung.y;
-                        const finalJongX = basePos.jong ? basePos.jong.x + state.offsetJong.x : 0;
-                        const finalJongY = basePos.jong ? basePos.jong.y + state.offsetJong.y : 0;
-
-                        const charDiv = document.createElement('div');
-                        charDiv.className = 'han-char w-full h-full font-bold';
-                        charDiv.style.fontFamily = state.fontFamily;
-                        charDiv.style.fontSize = '36px';
-
-                        const opacity = state.traceModeSub ? 0.3 : 1;
-
-                        const choSpan = document.createElement('span');
-                        choSpan.className = 'absolute flex items-center justify-center';
-                        choSpan.style.color = state.colorCho;
-                        choSpan.style.opacity = opacity;
-                        choSpan.style.transform = `translate(${finalChoX}px, ${finalChoY}px)`;
-                        choSpan.innerText = jamo.cho;
-                        charDiv.appendChild(choSpan);
-
-                        const jungSpan = document.createElement('span');
-                        jungSpan.className = 'absolute flex items-center justify-center';
-                        jungSpan.style.color = state.colorJung;
-                        jungSpan.style.opacity = opacity;
-                        jungSpan.style.transform = `translate(${finalJungX}px, ${finalJungY}px)`;
-                        jungSpan.innerText = jamo.jung;
-                        charDiv.appendChild(jungSpan);
-
-                        if (jamo.jong) {
-                            const jongSpan = document.createElement('span');
-                            jongSpan.className = 'absolute flex items-center justify-center';
-                            jongSpan.style.color = state.colorJong;
-                            jongSpan.style.opacity = opacity;
-                            jongSpan.style.transform = `translate(${finalJongX}px, ${finalJongY}px)`;
-                            jongSpan.innerText = jamo.jong;
-                            charDiv.appendChild(jongSpan);
-                        }
-
-                        cell.appendChild(charDiv);
-                        gridContainer.appendChild(cell);
+                    if (!char) {
+                        grid.appendChild(cell);
                         return;
                     }
-                }
 
-                // 일반 모드
-                const span = document.createElement('span');
-                span.className = 'han-char absolute inset-0 flex items-center justify-center';
-                span.style.fontFamily = state.fontFamily;
-                span.style.fontSize = '42px';
-                span.style.color = state.textColor;
-                span.style.opacity = state.tracingMode && !state.useColorSep ? 0.25 : 1;
-                span.innerText = char;
-                cell.appendChild(span);
-                
-                gridContainer.appendChild(cell);
+                    if (state.useColorSep) {
+                        const jamo = getJamo(char);
+                        if (jamo) {
+                            const basePos = getSmartBaseOffset(jamo);
+                            const finalChoX = basePos.cho.x + state.offsetCho.x;
+                            const finalChoY = basePos.cho.y + state.offsetCho.y;
+                            const finalJungX = basePos.jung.x + state.offsetJung.x;
+                            const finalJungY = basePos.jung.y + state.offsetJung.y;
+                            const finalJongX = basePos.jong ? basePos.jong.x + state.offsetJong.x : 0;
+                            const finalJongY = basePos.jong ? basePos.jong.y + state.offsetJong.y : 0;
+
+                            const charDiv = document.createElement('div');
+                            charDiv.className = 'han-char w-full h-full font-bold';
+                            charDiv.style.fontFamily = state.fontFamily;
+                            charDiv.style.fontSize = '36px';
+
+                            const opacity = state.traceModeSub ? 0.3 : 1;
+
+                            const choSpan = document.createElement('span');
+                            choSpan.className = 'absolute flex items-center justify-center';
+                            choSpan.style.color = state.colorCho;
+                            choSpan.style.opacity = opacity;
+                            choSpan.style.transform = `translate(${finalChoX}px, ${finalChoY}px)`;
+                            choSpan.innerText = jamo.cho;
+                            charDiv.appendChild(choSpan);
+
+                            const jungSpan = document.createElement('span');
+                            jungSpan.className = 'absolute flex items-center justify-center';
+                            jungSpan.style.color = state.colorJung;
+                            jungSpan.style.opacity = opacity;
+                            jungSpan.style.transform = `translate(${finalJungX}px, ${finalJungY}px)`;
+                            jungSpan.innerText = jamo.jung;
+                            charDiv.appendChild(jungSpan);
+
+                            if (jamo.jong) {
+                                const jongSpan = document.createElement('span');
+                                jongSpan.className = 'absolute flex items-center justify-center';
+                                jongSpan.style.color = state.colorJong;
+                                jongSpan.style.opacity = opacity;
+                                jongSpan.style.transform = `translate(${finalJongX}px, ${finalJongY}px)`;
+                                jongSpan.innerText = jamo.jong;
+                                charDiv.appendChild(jongSpan);
+                            }
+
+                            cell.appendChild(charDiv);
+                            grid.appendChild(cell);
+                            return;
+                        }
+                    }
+
+                    const span = document.createElement('span');
+                    span.className = 'han-char absolute inset-0 flex items-center justify-center';
+                    span.style.fontFamily = state.fontFamily;
+                    span.style.fontSize = '42px';
+                    span.style.color = state.textColor;
+                    span.style.opacity = state.tracingMode && !state.useColorSep ? 0.25 : 1;
+                    span.innerText = char;
+                    cell.appendChild(span);
+                    
+                    grid.appendChild(cell);
+                });
+
+                wrapper.appendChild(paper);
             });
 
-            // 렌더링 완료 후 크기 조절 (가로/세로 전환 시 즉각 반영)
             setTimeout(adjustPaperScale, 50);
         }
 
@@ -531,20 +573,6 @@
             document.querySelectorAll('input[name="orientation"]').forEach(radio => {
                 radio.addEventListener('change', (e) => {
                     state.orientation = e.target.value;
-                    const config = PAPER_CONFIG[state.orientation];
-                    
-                    // UI 제한값 갱신
-                    const contentInput = document.getElementById('content-input');
-                    contentInput.maxLength = config.cells;
-                    document.getElementById('content-label').innerText = `낱말 또는 문장 (최대 ${config.cells}자)`;
-                    document.getElementById('max-count').innerText = config.cells;
-                    
-                    // 글자 수가 초과하면 자르기
-                    if (state.content.length > config.cells) {
-                        state.content = state.content.substring(0, config.cells);
-                        contentInput.value = state.content;
-                        charCount.innerText = state.content.length;
-                    }
                     renderPreview();
                 });
             });
@@ -592,7 +620,7 @@
 
             // PDF 다운로드 기능
             document.getElementById('pdf-btn').addEventListener('click', () => {
-                const element = document.getElementById('pdf-document');
+                const wrapper = document.getElementById('pdf-wrapper');
                 const btn = document.getElementById('pdf-btn');
                 const originalText = btn.innerText;
 
@@ -600,31 +628,41 @@
                 btn.disabled = true;
 
                 const container = document.querySelector('.preview-container');
-                const paper = document.querySelector('.a4-paper');
 
                 const origContainerStyle = container.style.cssText;
-                const origPaperStyle = paper.style.cssText;
+                const origWrapperStyle = wrapper.style.cssText;
 
                 container.style.overflow = 'visible';
                 container.style.height = 'auto';
-                paper.style.transform = 'none';
-                paper.style.margin = '0 auto';
+                
+                wrapper.style.transform = 'none';
+                wrapper.style.margin = '0 auto';
+                wrapper.style.gap = '0px'; 
+
+                // 다중 페이지 인식 및 끊기를 위한 속성 추가
+                const papers = wrapper.querySelectorAll('.a4-paper');
+                papers.forEach((p, idx) => {
+                    if (idx > 0) p.classList.add('page-break-always');
+                });
 
                 const opt = {
                     margin:       0,
                     filename:     `${state.title || '학습지'}.pdf`,
                     image:        { type: 'jpeg', quality: 1 },
                     html2canvas:  { scale: 2, useCORS: true, logging: false },
-                    jsPDF:        { unit: 'mm', format: 'a4', orientation: state.orientation }
+                    jsPDF:        { unit: 'mm', format: 'a4', orientation: state.orientation },
+                    pagebreak:    { mode: 'css', before: '.page-break-always' }
                 };
 
-                window.html2pdf().set(opt).from(element).save().then(() => {
+                window.html2pdf().set(opt).from(wrapper).save().then(() => {
                     container.style.cssText = origContainerStyle;
-                    paper.style.cssText = origPaperStyle;
+                    wrapper.style.cssText = origWrapperStyle;
+                    
+                    papers.forEach(p => p.classList.remove('page-break-always'));
+                    
                     btn.innerText = originalText;
                     btn.disabled = false;
                     
-                    // PDF 생성 완료 후 스케일 원상복구
                     adjustPaperScale(); 
                 });
             });
